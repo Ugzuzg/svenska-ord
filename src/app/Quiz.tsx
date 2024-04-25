@@ -5,20 +5,21 @@ import styles from "./Quiz.module.css";
 import importedNouns from "./nouns.csv";
 // @ts-expect-error csv-loader
 import importedAdjectives from "./adjectives.csv";
-
-const nounForms = [
-  "singularIndefinite",
-  "singularDefinite",
-  "pluralIndefinite",
-  "pluralDefinite",
-] as const;
-type NounForm = (typeof nounForms)[number];
-
-type AllForms = Record<(typeof nounForms)[number], string>;
+// @ts-expect-error csv-loader
+import importedPossessives from "./possessives.csv";
 
 type Noun = {
   genus: "utrum" | "neutrum";
-  forms: AllForms;
+  forms: {
+    singular: {
+      indefinite: string;
+      definite: string;
+    };
+    plural: {
+      indefinite: string;
+      definite: string;
+    };
+  };
 };
 
 type Adjective = {
@@ -30,28 +31,36 @@ type Adjective = {
   plural: string;
 };
 
+type Possessive = {
+  singular: {
+    utrum: string;
+    neutrum: string;
+  };
+  plural: string;
+};
+
 const articles = {
   utrum: {
-    singularIndefinite: "en",
-    singularDefinite: "den",
-    pluralIndefinite: "",
-    pluralDefinite: "de",
+    singular: { indefinite: "en", definite: "den" },
+    plural: { indefinite: "", definite: "de" },
   },
   neutrum: {
-    singularIndefinite: "ett",
-    singularDefinite: "det",
-    pluralIndefinite: "",
-    pluralDefinite: "de",
+    singular: { indefinite: "ett", definite: "det" },
+    plural: { indefinite: "", definite: "de" },
   },
-};
+} as const;
 
 const nouns: Noun[] = importedNouns.map((x: any) => ({
   genus: x.genus,
   forms: {
-    ...(x.singularIndefinite && { singularIndefinite: x.singularIndefinite }),
-    ...(x.singularDefinite && { singularDefinite: x.singularDefinite }),
-    ...(x.pluralIndefinite && { pluralIndefinite: x.pluralIndefinite }),
-    ...(x.pluralDefinite && { pluralDefinite: x.pluralDefinite }),
+    singular: {
+      indefinite: x.singularIndefinite,
+      definite: x.singularDefinite,
+    },
+    plural: {
+      indefinite: x.pluralIndefinite,
+      definite: x.pluralDefinite,
+    },
   },
 }));
 const adjectives: Adjective[] = importedAdjectives.map((x: any) => ({
@@ -60,6 +69,13 @@ const adjectives: Adjective[] = importedAdjectives.map((x: any) => ({
     neutrum: x["singularIndefinite neutrum"],
   },
   singularDefinite: x["singularDefinite"],
+  plural: x["plural"],
+}));
+const possessives = importedPossessives.map((x: any) => ({
+  singular: {
+    utrum: x["singular utrum"],
+    neutrum: x["singular neutrum"],
+  },
   plural: x["plural"],
 }));
 
@@ -71,34 +87,77 @@ const randomItem = <T extends any>(array: readonly T[]): T => {
 const useRandomPhrase = (seed?: number) => {
   const [noun, setNoun] = useState<Noun>();
   const [adjective, setAdjective] = useState<Adjective>();
-  const [form, setForm] = useState<NounForm>();
+  const [possessive, setPossessive] = useState<Possessive>();
+  const [wordNumber, setWordNumber] = useState<"singular" | "plural">();
+  const [collocationForm, setCollocationForm] = useState<
+    "indefinite" | "definite" | "possessive"
+  >();
+  const [nounForm, setNounForm] = useState<"indefinite" | "definite">();
   const [expectedAnswer, setExpectedAnswer] = useState<string>();
 
   useEffect(() => {
-    const n = randomItem(nouns);
-    setNoun(n);
-    const a = randomItem(adjectives);
-    setAdjective(a);
+    const wordNumber = randomItem(["singular", "plural"] as const);
+    setWordNumber(wordNumber);
+    const collocationForm = randomItem([
+      "indefinite",
+      "definite",
+      "possessive",
+    ] as const);
+    setCollocationForm(collocationForm);
 
-    const f = randomItem(Object.keys(n.forms)) as NounForm;
-    setForm(f);
+    const nounForm = (() => {
+      if (collocationForm === "possessive") return "indefinite";
+      return collocationForm;
+    })();
+    setNounForm(nounForm);
+
+    const noun = randomItem(
+      nouns.filter((x) => Boolean(x.forms[wordNumber][nounForm])),
+    );
+    setNoun(noun);
+    setPossessive(randomItem(possessives));
+    const adj = randomItem(adjectives);
+    setAdjective(adj);
 
     setExpectedAnswer(() => {
-      switch (f) {
-        case "singularIndefinite":
-          return a.singularIndefinite[n.genus];
-        case "singularDefinite":
-          return a.singularDefinite;
-        case "pluralIndefinite":
-        case "pluralDefinite":
-          return a.plural;
+      switch (wordNumber) {
+        case "singular": {
+          switch (collocationForm) {
+            case "indefinite":
+              return adj.singularIndefinite[noun.genus];
+            case "definite":
+            case "possessive":
+              return adj.singularDefinite;
+          }
+        }
+        case "plural": {
+          return adj.plural;
+        }
       }
     });
   }, [seed]);
 
-  if (!noun || !adjective || !form || !expectedAnswer) return null;
+  if (
+    !noun ||
+    !adjective ||
+    !possessive ||
+    !wordNumber ||
+    !collocationForm ||
+    !nounForm ||
+    !expectedAnswer
+  ) {
+    return null;
+  }
 
-  return { noun, adjective, form, expectedAnswer };
+  return {
+    noun,
+    adjective,
+    possessive,
+    wordNumber,
+    collocationForm,
+    nounForm,
+    expectedAnswer,
+  };
 };
 
 export function Quiz() {
@@ -108,7 +167,15 @@ export function Quiz() {
 
   if (!question) return null;
 
-  const { noun, adjective, form, expectedAnswer } = question;
+  const {
+    noun,
+    adjective,
+    possessive,
+    wordNumber,
+    collocationForm,
+    nounForm,
+    expectedAnswer,
+  } = question;
 
   function check(formData: FormData) {
     const answer: string = (formData.get("answer") ?? "") as string;
@@ -120,12 +187,25 @@ export function Quiz() {
     }
   }
 
+  const left = (() => {
+    switch (collocationForm) {
+      case "indefinite":
+      case "definite": {
+        return articles[noun.genus][wordNumber][collocationForm];
+      }
+      case "possessive": {
+        if (wordNumber === "plural") return possessive.plural;
+        return possessive[wordNumber][noun.genus];
+      }
+    }
+  })();
+
   return (
     <form action={check} className={styles.quiz}>
       <span className={styles.adjective}>
         {adjective.singularIndefinite.utrum}
       </span>
-      <span className={styles.article}>{articles[noun.genus][form]} </span>
+      <span className={styles.article}>{left} </span>
       <input
         name="answer"
         className={styles.answer}
@@ -133,7 +213,7 @@ export function Quiz() {
         onChange={(e) => setAnswer(e.target.value)}
         autoComplete="off"
       />
-      <span className={styles.noun}> {noun.forms[form]}</span>
+      <span className={styles.noun}> {noun.forms[wordNumber][nounForm]}</span>
       <button type="submit" className={styles.check}>
         Check
       </button>
