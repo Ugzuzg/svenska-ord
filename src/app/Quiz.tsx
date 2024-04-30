@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import styles from "./Quiz.module.css";
 // @ts-expect-error csv-loader
 import importedNouns from "./nouns.csv";
@@ -41,12 +41,24 @@ type Possessive = {
 
 const articles = {
   utrum: {
-    singular: { indefinite: "en", definite: "den" },
-    plural: { indefinite: "", definite: "de" },
+    singular: {
+      indefinite: ["en", "någon", "ingen", "vilken", "en annan"],
+      definite: ["den", "den här"],
+    },
+    plural: {
+      indefinite: ["", "tre", "många", "några", "inga", "vilka", "andra"],
+      definite: ["de", "de här"],
+    },
   },
   neutrum: {
-    singular: { indefinite: "ett", definite: "det" },
-    plural: { indefinite: "", definite: "de" },
+    singular: {
+      indefinite: ["ett", "något", "inget", "vilket", "ett annat"],
+      definite: ["det", "det här"],
+    },
+    plural: {
+      indefinite: ["", "tre", "många", "några", "inga", "vilka", "andra"],
+      definite: ["de", "de här"],
+    },
   },
 } as const;
 
@@ -165,17 +177,33 @@ export function Quiz() {
   const [seed, setSeed] = useState(0);
   const question = useRandomPhrase(seed);
 
+  const left = useMemo(() => {
+    if (!question) return null;
+
+    const { noun, possessive, wordNumber, collocationForm } = question;
+
+    switch (collocationForm) {
+      case "indefinite":
+      case "definite": {
+        return randomItem(
+          articles[question.noun.genus][wordNumber][collocationForm],
+        );
+      }
+      case "possessive": {
+        if (wordNumber === "plural") return possessive.plural;
+        return possessive[wordNumber][noun.genus];
+      }
+    }
+  }, [
+    question?.noun,
+    question?.possessive,
+    question?.wordNumber,
+    question?.collocationForm,
+  ]);
+
   if (!question) return null;
 
-  const {
-    noun,
-    adjective,
-    possessive,
-    wordNumber,
-    collocationForm,
-    nounForm,
-    expectedAnswer,
-  } = question;
+  const { noun, adjective, wordNumber, nounForm, expectedAnswer } = question;
 
   function check(formData: FormData) {
     const answer: string = (formData.get("answer") ?? "") as string;
@@ -186,19 +214,6 @@ export function Quiz() {
       setAnswer("");
     }
   }
-
-  const left = (() => {
-    switch (collocationForm) {
-      case "indefinite":
-      case "definite": {
-        return articles[noun.genus][wordNumber][collocationForm];
-      }
-      case "possessive": {
-        if (wordNumber === "plural") return possessive.plural;
-        return possessive[wordNumber][noun.genus];
-      }
-    }
-  })();
 
   return (
     <form action={check} className={styles.quiz}>
